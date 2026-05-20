@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统运维 模拟考试系统</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --success-color: #2ecc71;
+            --danger-color: #e74c3c;
+            --warning-color: #f39c12;
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --text-color: #333;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            padding: 20px 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+        header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 25px; }
+        h1 { color: #2c3e50; margin: 0; }
+        .control-panel {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 15px;
+        }
+        .control-group { display: flex; align-items: center; gap: 8px; }
+        .control-group label { font-weight: bold; }
+        .control-group input {
+            width: 60px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            color: white;
+        }
+        .btn-primary { background-color: var(--primary-color); }
+        .btn-success { background-color: var(--success-color); }
+        .btn-warning { background-color: var(--warning-color); }
+        .btn-danger { background-color: var(--danger-color); }
+        .btn-purple { background-color: #9b59b6; }
+        .btn-green { background-color: #27ae60; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn:hover:not(:disabled) { opacity: 0.85; transform: translateY(-1px); }
+        
+        #file-name { font-style: italic; color: #666; margin-left: 10px; }
+        #timer { font-size: 18px; font-weight: bold; color: #2c3e50; margin-left: auto; }
+
+        .question-block {
+            background: #fff;
+            border-left: 5px solid var(--primary-color);
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .question-title { font-weight: 600; font-size: 1.1em; margin-bottom: 15px; }
+        .options label {
+            display: block;
+            padding: 10px 15px;
+            margin-bottom: 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .options label:hover { background-color: #f0f8ff; }
+        .options input { margin-right: 10px; }
+        
+        /* 学习模式下的正确答案高亮样式 */
+        .learning-mode .options label.correct-answer {
+            background-color: #d4edda !important;
+            border-color: #28a745 !important;
+            color: #155724 !important;
+            position: relative;
+        }
+        .learning-mode .options label.correct-answer::before {
+            content: "✓ ";
+            font-weight: bold;
+            color: #28a745;
+            margin-right: 5px;
+        }
+        .learning-mode .options label.correct-answer input {
+            accent-color: #28a745;
+        }
+        .learning-mode .options label.incorrect-option {
+            opacity: 0.6;
+        }
+        
+        .result-feedback {
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+        .correct { background-color: #e9f7ef; color: var(--success-color); border-left: 4px solid var(--success-color); }
+        .incorrect { background-color: #fdedec; color: var(--danger-color); border-left: 4px solid var(--danger-color); }
+        .explanation { font-size: 0.9em; color: #555; margin-top: 8px; padding-left: 10px; border-left: 3px solid #ccc; }
+
+        #scoreResult {
+            text-align: center;
+            font-size: 1.5em;
+            padding: 20px;
+            display: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        #examArea { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1 id="mainTitle">📚 系统运维 模拟考试系统</h1>
+        <p>上传题库 → 设置题量 → 开始考试 → 导出错题/重考/学习</p>
+    </header>
+
+    <div class="control-panel">
+        <input type="file" id="fileInput" accept=".xls,.xlsx" style="display:none;" onchange="handleFileSelect(event)">
+        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">1️⃣ 选择题库文件</button>
+        <span id="file-name">未选择文件</span>
+
+        <div class="control-group">
+            <label>单选:</label>
+            <input type="number" id="numSingle" value="50" min="1" max="200">
+        </div>
+        <div class="control-group">
+            <label>多选:</label>
+            <input type="number" id="numMulti" value="30" min="1" max="200">
+        </div>
+        <div class="control-group">
+            <label>判断:</label>
+            <input type="number" id="numJudge" value="20" min="1" max="200">
+        </div>
+        
+        <button class="btn btn-warning" onclick="startExam()">2️⃣ 开始组卷</button>
+        <button class="btn btn-success" onclick="submitExam()" id="submitBtn" disabled>3️⃣ 提交并评分</button>
+        <button class="btn btn-danger" onclick="exportWrongQuestions()" style="display:none;" id="exportBtn">📥 导出错题</button>
+        <button class="btn btn-purple" onclick="restartWrongExam()" style="display:none;" id="retryBtn">🔄 错题重考</button>
+        <button class="btn btn-green" onclick="enterLearningMode()">📖 学习模式</button>
+        
+        <span id="timer">00:00</span>
+    </div>
+
+    <div id="scoreResult"></div>
+    <div id="examArea"></div>
+</div>
+
+<script>
+let fullData = { single: [], multi: [], judge: [] };
+let currentExam = [];
+let timerInterval;
+let startTime;
+let wrongQuestions = [];
+let currentFileName = '';
+
+// 处理文件选择
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    currentFileName = file.name.replace(/\.[^/.]+$/, "");
+    document.getElementById('file-name').innerText = `已选择: ${file.name}`;
+    document.getElementById('mainTitle').innerText = `📚 ${currentFileName} 模拟考试系统`;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        fullData = { single: [], multi: [], judge: [] };
+        workbook.SheetNames.forEach(sheetName => {
+            const lowerSheetName = sheetName.toLowerCase();
+            const sheet = workbook.Sheets[sheetName];
+            const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            
+            if (json.length < 2) return;
+            
+            if (lowerSheetName.includes('单选')) {
+                parseQuestionSheet(json, 'single', sheetName);
+            } else if (lowerSheetName.includes('多选')) {
+                parseQuestionSheet(json, 'multi', sheetName);
+            } else if (lowerSheetName.includes('判断')) {
+                parseJudgeSheet(json, sheetName);
+            }
+        });
+        
+        alert(`题库加载成功！\n单选题: ${fullData.single.length} 道\n多选题: ${fullData.multi.length} 道\n判断题: ${fullData.judge.length} 道`);
+        document.getElementById('submitBtn').disabled = true; // 未开始考试前禁用提交
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+// 解析选择题工作表
+function parseQuestionSheet(json, type, sheetName) {
+    const headers = json[0] || [];
+    const questionCol = findColumnIndex(headers, ['题目', '题干', 'question']);
+    const answerCol = findColumnIndex(headers, ['答案', 'answer']);
+    const optionCols = findOptionColumns(headers);
+    
+    if (questionCol === -1 || answerCol === -1 || optionCols.length === 0) return;
+    
+    json.slice(1).forEach(row => {
+        if (row[questionCol] && row[answerCol]) {
+            const options = {};
+            optionCols.forEach((colIdx, idx) => {
+                if (row[colIdx]) options[String.fromCharCode(65 + idx)] = row[colIdx];
+            });
+            
+            fullData[type].push({
+                id: row[0] || fullData[type].length + 1,
+                q: row[questionCol],
+                options: options,
+                answer: row[answerCol]?.toString().trim().toUpperCase(),
+                explanation: row[answerCol + 1] || "无解析"
+            });
+        }
+    });
+}
+
+// 解析判断题工作表
+function parseJudgeSheet(json, sheetName) {
+    const headers = json[0] || [];
+    const questionCol = findColumnIndex(headers, ['题目', '题干', 'question']);
+    const answerCol = findColumnIndex(headers, ['答案', 'answer', '正确', '对错']);
+    
+    if (questionCol === -1 || answerCol === -1) return;
+    
+    json.slice(1).forEach(row => {
+        if (row[questionCol] && row[answerCol]) {
+            let answer = row[answerCol].toString().trim();
+            if (/^(对|√|true|t|yes|y)$/i.test(answer)) answer = '对';
+            if (/^(错|×|false|f|no|n)$/i.test(answer)) answer = '错';
+            
+            fullData.judge.push({
+                id: row[0] || fullData.judge.length + 1,
+                q: row[questionCol],
+                answer: answer,
+                explanation: row[answerCol + 1] || "无解析"
+            });
+        }
+    });
+}
+
+// 查找列索引
+function findColumnIndex(headers, possibleNames) {
+    for (const name of possibleNames) {
+        const idx = headers.findIndex(h => h && h.toString().toLowerCase().includes(name.toLowerCase()));
+        if (idx !== -1) return idx;
+    }
+    return -1;
+}
+
+// 查找选项列
+function findOptionColumns(headers) {
+    const optionCols = [];
+    headers.forEach((header, idx) => {
+        if (header && /^[A-D]$/i.test(header.toString().trim())) optionCols.push(idx);
+    });
+    return optionCols;
+}
+
+// 计时器
+function startTimer() {
+    startTime = Date.now();
+    timerInterval = setInterval(updateTimer, 1000);
+}
+
+function updateTimer() {
+    const elapsed = Date.now() - startTime;
+    const minutes = Math.floor(elapsed / 60000);
+    const seconds = Math.floor((elapsed % 60000) / 1000);
+    document.getElementById('timer').innerText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function stopTimer() {
+    clearInterval(timerInterval);
+}
+
+// 开始组卷
+function startExam() {
+    if (fullData.single.length === 0 && fullData.multi.length === 0 && fullData.judge.length === 0) {
+        alert('请先上传题库文件！');
+        return;
+    }
+
+    const numSingle = parseInt(document.getElementById('numSingle').value);
+    const numMulti = parseInt(document.getElementById('numMulti').value);
+    const numJudge = parseInt(document.getElementById('numJudge').value);
+
+    if (numSingle > fullData.single.length || numMulti > fullData.multi.length || numJudge > fullData.judge.length) {
+        alert('题目数量超过题库上限，请减少数量！');
+        return;
+    }
+
+    const shuffle = (arr, n) => [...arr].sort(() => Math.random() - 0.5).slice(0, n);
+    currentExam = [
+        ...shuffle(fullData.single, numSingle).map(q => ({...q, type: 'single'})),
+        ...shuffle(fullData.multi, numMulti).map(q => ({...q, type: 'multi'})),
+        ...shuffle(fullData.judge, numJudge).map(q => ({...q, type: 'judge'}))
+    ];
+
+    renderExam(currentExam);
+    document.getElementById('examArea').style.display = 'block';
+    document.getElementById('scoreResult').style.display = 'none';
+    document.getElementById('exportBtn').style.display = 'none';
+    document.getElementById('retryBtn').style.display = 'none';
+    wrongQuestions = [];
+    startTimer();
+    
+    // 启用提交按钮
+    document.getElementById('submitBtn').disabled = false;
+    
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// 渲染试卷
+function renderExam(data) {
+    let html = '';
+    data.forEach((item, index) => {
+        html += `<div class="question-block" id="q-${index}">`;
+        html += `<div class="question-title">${index + 1}. ${item.q}</div><div class="options">`;
+
+        if (item.type === 'judge') {
+            html += `<label><input type="radio" name="ans_${index}" value="对"> 对</label>`;
+            html += `<label><input type="radio" name="ans_${index}" value="错"> 错</label>`;
+        } else {
+            const opts = item.options;
+            for (const key in opts) {
+                if (opts[key]) {
+                    const type = item.type === 'single' ? 'radio' : 'checkbox';
+                    html += `<label><input type="${type}" name="ans_${index}${item.type === 'multi' ? '_'+key : ''}" value="${key}"> ${key}. ${opts[key]}</label>`;
+                }
+            }
+        }
+        html += `</div></div>`;
+    });
+    document.getElementById('examArea').innerHTML = html;
+}
+
+// 提交并评分
+function submitExam() {
+    if (currentExam.length === 0) {
+        alert('请先开始组卷！');
+        return;
+    }
+
+    // 禁用提交按钮，防止重复提交
+    document.getElementById('submitBtn').disabled = true;
+
+    stopTimer();
+    const elapsed = Date.now() - startTime;
+    const minutes = Math.floor(elapsed / 60000);
+    const seconds = Math.floor((elapsed % 60000) / 1000);
+    const timeUsed = `${minutes}分${seconds}秒`;
+
+    let score = 0;
+    wrongQuestions = [];
+
+    currentExam.forEach((item, index) => {
+        let isCorrect = false;
+        let userAnswer = '';
+        const div = document.getElementById(`q-${index}`);
+
+        if (item.type === 'judge') {
+            const sel = document.querySelector(`input[name="ans_${index}"]:checked`);
+            userAnswer = sel ? sel.value : '未作答';
+            isCorrect = userAnswer === item.answer;
+        } else if (item.type === 'single') {
+            const sel = document.querySelector(`input[name="ans_${index}"]:checked`);
+            userAnswer = sel ? sel.value : '未作答';
+            isCorrect = userAnswer === item.answer;
+        } else if (item.type === 'multi') {
+            const checked = document.querySelectorAll(`input[name^="ans_${index}_"]:checked`);
+            userAnswer = Array.from(checked).map(c => c.value).sort().join('') || '未作答';
+            const correct = item.answer.split('').sort().join('');
+            isCorrect = userAnswer === correct;
+        }
+
+        if (isCorrect) {
+            score++;
+        } else {
+            wrongQuestions.push({
+                题号: index + 1,
+                题型: item.type === 'single' ? '单选' : item.type === 'multi' ? '多选' : '判断',
+                题目: item.q,
+                选项: item.options ? JSON.stringify(item.options) : null,
+                用户答案: userAnswer,
+                正确答案: item.answer,
+                解析: item.explanation
+            });
+        }
+
+        const feedback = document.createElement('div');
+        feedback.className = `result-feedback ${isCorrect ? 'correct' : 'incorrect'}`;
+        let text = isCorrect ? '✅ 回答正确' : `❌ 回答错误。正确答案：${item.answer}`;
+        text += `<div class="explanation">💡 解析：${item.explanation}</div>`;
+        feedback.innerHTML = text;
+        div.appendChild(feedback);
+    });
+
+    const resultDiv = document.getElementById('scoreResult');
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = `考试结束！<br>您的得分是：${score} / ${currentExam.length}<br>用时：${timeUsed}`;
+    
+    document.getElementById('exportBtn').style.display = 'inline-block';
+    document.getElementById('retryBtn').style.display = 'inline-block';
+    
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// 导出错题
+function exportWrongQuestions() {
+    if (wrongQuestions.length === 0) {
+        alert('没有错题可导出！');
+        return;
+    }
+    const ws = XLSX.utils.json_to_sheet(wrongQuestions);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "错题汇总");
+    XLSX.writeFile(wb, `${currentFileName}_错题_${new Date().toLocaleDateString()}.xls`);
+}
+
+// 错题重考
+function restartWrongExam() {
+    if (wrongQuestions.length === 0) {
+        alert('没有错题可重考！');
+        return;
+    }
+    
+    currentExam = wrongQuestions.map(q => ({
+        id: q.题号,
+        q: q.题目,
+        options: q.选项 ? JSON.parse(q.选项) : null,
+        answer: q.正确答案,
+        explanation: q.解析,
+        type: q.题型 === '单选' ? 'single' : q.题型 === '多选' ? 'multi' : 'judge'
+    }));
+    
+    stopTimer();
+    document.getElementById('scoreResult').style.display = 'none';
+    document.getElementById('exportBtn').style.display = 'none';
+    document.getElementById('retryBtn').style.display = 'none';
+    
+    // 启用提交按钮
+    document.getElementById('submitBtn').disabled = false;
+    
+    startTimer();
+    renderExam(currentExam);
+}
+
+// 学习模式
+function enterLearningMode() {
+    currentExam = [
+        ...fullData.single.map(q => ({...q, type: 'single'})),
+        ...fullData.multi.map(q => ({...q, type: 'multi'})),
+        ...fullData.judge.map(q => ({...q, type: 'judge'}))
+    ];
+    
+    let html = '';
+    currentExam.forEach((item, index) => {
+        html += `<div class="question-block learning-mode" id="q-${index}">`;
+        html += `<div class="question-title">${index + 1}. ${item.q}</div><div class="options">`;
+
+        if (item.type === 'judge') {
+            const isCorrect = item.answer === '对';
+            html += `<label class="${isCorrect ? 'correct-answer' : 'incorrect-option'}"><input type="radio" name="ans_${index}" value="对" checked disabled> 对</label>`;
+            html += `<label class="${!isCorrect ? 'correct-answer' : 'incorrect-option'}"><input type="radio" name="ans_${index}" value="错" checked disabled> 错</label>`;
+        } else {
+            const opts = item.options;
+            const correctAnswers = item.answer.split('');
+            for (const key in opts) {
+                if (opts[key]) {
+                    const type = item.type === 'single' ? 'radio' : 'checkbox';
+                    const isChecked = correctAnswers.includes(key);
+                    html += `<label class="${isChecked ? 'correct-answer' : 'incorrect-option'}"><input type="${type}" name="ans_${index}${item.type === 'multi' ? '_'+key : ''}" value="${key}" ${isChecked ? 'checked' : ''} disabled> ${key}. ${opts[key]}</label>`;
+                }
+            }
+        }
+        html += `</div></div>`;
+    });
+    
+    document.getElementById('examArea').innerHTML = html;
+    document.getElementById('examArea').style.display = 'block';
+    document.getElementById('scoreResult').style.display = 'none';
+    document.getElementById('exportBtn').style.display = 'none';
+    document.getElementById('retryBtn').style.display = 'none';
+    stopTimer();
+    
+    // 学习模式下禁用提交按钮
+    document.getElementById('submitBtn').disabled = true;
+}
+</script>
+
+</body>
+</html>
