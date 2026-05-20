@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
     <title>多题库·智能组卷考试系统</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <style>
@@ -16,63 +16,175 @@
             --text-color: #333;
             --border-light: #e9ecef;
         }
+        * {
+            box-sizing: border-box;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
-            padding: 20px;
+            padding: 12px;
             line-height: 1.5;
         }
         .container {
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 0 auto;
             background: var(--card-bg);
-            padding: 20px 30px;
-            border-radius: 16px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+            padding: 16px 14px;
+            border-radius: 20px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.05);
         }
-        header { text-align: center; border-bottom: 2px solid #eee; padding-bottom: 12px; margin-bottom: 20px; position: relative; }
-        h1 { color: #2c3e50; margin: 0; font-size: 1.8rem; }
-        .save-btn {
-            position: absolute; right: 0; top: 0;
-            background: #2c3e50; color: white; border: none; border-radius: 30px;
-            padding: 6px 16px; cursor: pointer; font-size: 0.8rem;
+        header {
+            text-align: center;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 18px;
         }
-        .dashboard { display: flex; gap: 25px; flex-wrap: wrap; }
+        h1 {
+            color: #2c3e50;
+            margin: 0;
+            font-size: 1.6rem;
+        }
+        header p {
+            font-size: 0.85rem;
+            margin: 6px 0 0;
+            color: #5a6e7a;
+        }
+        .dashboard {
+            display: flex;
+            gap: 18px;
+            flex-wrap: wrap;
+        }
         .library-panel {
-            flex: 1.2; min-width: 320px;
-            background: #fafbfc; border-radius: 14px; padding: 16px;
+            flex: 1.2;
+            min-width: 260px;
+            background: #fafbfc;
+            border-radius: 16px;
+            padding: 14px;
             border: 1px solid var(--border-light);
         }
-        .exam-panel { flex: 2.8; min-width: 500px; }
+        .exam-panel {
+            flex: 2.8;
+            min-width: 0; /* 防止溢出 */
+            width: 100%;
+        }
         .panel-title {
-            font-size: 1.25rem; font-weight: 600; margin-bottom: 14px;
-            border-left: 4px solid var(--primary-color); padding-left: 12px;
-            display: flex; justify-content: space-between; align-items: center;
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            border-left: 4px solid var(--primary-color);
+            padding-left: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
         }
         .library-card {
-            background: white; border-radius: 12px; padding: 12px 15px;
-            margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            background: white;
+            border-radius: 14px;
+            padding: 12px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
             border: 1px solid #eef2f6;
         }
-        .lib-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-        .lib-name { font-weight: bold; font-size: 1rem; word-break: break-all; }
-        .stat-badge { display: flex; gap: 10px; margin: 8px 0; font-size: 0.8rem; }
-        .stat-badge span { background: #eef2fa; padding: 2px 8px; border-radius: 20px; }
-        .ratio-control { display: flex; align-items: center; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
-        .ratio-input { width: 70px; padding: 6px; border: 1px solid #ccc; border-radius: 6px; text-align: center; }
-        .btn-small { background: #e74c3c; border: none; color: white; padding: 4px 12px; border-radius: 20px; cursor: pointer; }
-        .total-ratio { background: #eef2ff; padding: 10px; border-radius: 12px; margin-top: 12px; text-align: center; }
-        .control-panel {
-            background: #f9f9f9; padding: 15px; border-radius: 12px; margin-bottom: 20px;
-            display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+        .lib-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+            gap: 6px;
         }
-        .control-group { display: flex; align-items: center; gap: 6px; }
-        .control-group input { width: 65px; padding: 6px; border-radius: 6px; border: 1px solid #ccc; text-align: center; }
+        .lib-name {
+            font-weight: bold;
+            font-size: 0.9rem;
+            word-break: break-all;
+        }
+        .stat-badge {
+            display: flex;
+            gap: 8px;
+            margin: 8px 0;
+            font-size: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .stat-badge span {
+            background: #eef2fa;
+            padding: 2px 8px;
+            border-radius: 20px;
+        }
+        .ratio-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        .ratio-input {
+            width: 70px;
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+        .btn-small {
+            background: #e74c3c;
+            border: none;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 0.7rem;
+        }
+        .total-ratio {
+            background: #eef2ff;
+            padding: 10px;
+            border-radius: 14px;
+            margin-top: 12px;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+        .control-panel {
+            background: #f9f9f9;
+            padding: 14px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: white;
+            padding: 4px 10px;
+            border-radius: 30px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .control-group label {
+            font-weight: 500;
+            font-size: 0.85rem;
+        }
+        .control-group input {
+            width: 60px;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 0.85rem;
+        }
         .btn {
-            padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer;
-            font-size: 14px; font-weight: 500; color: white;
+            padding: 8px 14px;
+            border: none;
+            border-radius: 40px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: white;
+            white-space: nowrap;
         }
         .btn-primary { background-color: #3498db; }
         .btn-success { background-color: #2ecc71; }
@@ -81,26 +193,121 @@
         .btn-purple { background-color: #9b59b6; }
         .btn-green { background-color: #27ae60; }
         .btn-outline { background: #6c757d; }
-        #timer { font-size: 18px; font-weight: bold; margin-left: auto; background: #2c3e50; color: white; padding: 4px 12px; border-radius: 40px; }
-        .question-block {
-            background: #fff; border-left: 5px solid var(--primary-color);
-            padding: 15px 18px; margin-bottom: 20px; border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+        #timer {
+            font-size: 0.9rem;
+            font-weight: bold;
+            margin-left: auto;
+            background: #2c3e50;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 40px;
+            white-space: nowrap;
         }
-        .options label { display: block; padding: 8px 12px; margin-bottom: 6px; border: 1px solid #e2e8f0; border-radius: 10px; cursor: pointer; }
-        .learning-mode .options label.correct-answer { background-color: #d4edda !important; border-color: #28a745 !important; }
-        .result-feedback { padding: 10px; margin-top: 12px; border-radius: 8px; }
+        .question-block {
+            background: #fff;
+            border-left: 5px solid var(--primary-color);
+            padding: 14px 16px;
+            margin-bottom: 18px;
+            border-radius: 14px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+            word-wrap: break-word;
+        }
+        .question-title {
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: 12px;
+            word-break: break-word;
+        }
+        .options label {
+            display: block;
+            padding: 8px 12px;
+            margin-bottom: 6px;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            word-break: break-word;
+        }
+        .learning-mode .options label.correct-answer {
+            background-color: #d4edda !important;
+            border-color: #28a745 !important;
+        }
+        .result-feedback {
+            padding: 10px;
+            margin-top: 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+        }
         .correct { background: #e9f7ef; color: #2e7d32; border-left: 4px solid #2ecc71; }
         .incorrect { background: #fdedec; color: #c0392b; border-left: 4px solid #e74c3c; }
-        .explanation { font-size: 0.85rem; color: #555; margin-top: 6px; }
-        #scoreResult { text-align: center; font-size: 1.3rem; padding: 18px; display: none; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 16px; margin-bottom: 20px; }
+        .explanation { font-size: 0.8rem; color: #555; margin-top: 6px; word-break: break-word; }
+        #scoreResult {
+            text-align: center;
+            font-size: 1.1rem;
+            padding: 16px;
+            display: none;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-radius: 20px;
+            margin-bottom: 20px;
+            word-break: break-word;
+        }
         #examArea { display: none; }
-        .add-lib-btn { background: #2c3e50; color: white; border: none; border-radius: 40px; padding: 8px 18px; cursor: pointer; margin-bottom: 15px; }
+        .add-lib-btn {
+            background: #2c3e50;
+            color: white;
+            border: none;
+            border-radius: 40px;
+            padding: 6px 14px;
+            cursor: pointer;
+            margin-bottom: 12px;
+            font-size: 0.8rem;
+        }
         .bottom-submit {
-            text-align: center; margin-top: 30px; margin-bottom: 20px;
+            text-align: center;
+            margin-top: 20px;
+            margin-bottom: 10px;
         }
         .bottom-submit button {
-            font-size: 18px; padding: 12px 32px;
+            font-size: 1rem;
+            padding: 10px 24px;
+        }
+
+        /* 手机响应式优化 */
+        @media (max-width: 700px) {
+            body {
+                padding: 8px;
+            }
+            .container {
+                padding: 12px;
+            }
+            .dashboard {
+                flex-direction: column;
+            }
+            .library-panel, .exam-panel {
+                width: 100%;
+                min-width: auto;
+            }
+            .control-panel {
+                justify-content: center;
+            }
+            .control-group input {
+                width: 55px;
+            }
+            .btn {
+                padding: 6px 12px;
+                font-size: 0.75rem;
+            }
+            #timer {
+                font-size: 0.8rem;
+                padding: 3px 8px;
+            }
+            .question-block {
+                padding: 12px;
+            }
+            .options label {
+                padding: 6px 10px;
+            }
         }
     </style>
 </head>
@@ -108,8 +315,7 @@
 <div class="container">
     <header>
         <h1>📚 多题库·智能组卷考试系统</h1>
-        <button class="save-btn" id="downloadHtmlBtn">💾 一键保存本页面为HTML</button>
-        <p>支持多题库分别设置占比 → 按比例抽题 → 考试/学习/错题管理</p>
+        <p>上传多个题库 → 分别设置占比 → 按比例抽题 → 考试/学习/错题管理</p>
     </header>
 
     <div class="dashboard">
@@ -120,14 +326,14 @@
             </div>
             <div id="librariesContainer">暂无题库，点击上方按钮添加 .xls/.xlsx 文件</div>
             <div id="ratioTotalMsg" class="total-ratio">📊 总比例: 0% (需为100%)</div>
-            <button id="clearAllLibraries" class="btn btn-outline" style="margin-top:8px; background:#e9ecef;">🗑️ 清空所有题库</button>
+            <button id="clearAllLibraries" class="btn btn-outline" style="margin-top:8px; background:#e9ecef; width:100%;">🗑️ 清空所有题库</button>
         </div>
 
         <div class="exam-panel">
             <div class="control-panel">
-                <div class="control-group"><label>单选(道):</label><input type="number" id="numSingle" value="50" min="1" max="300"></div>
-                <div class="control-group"><label>多选(道):</label><input type="number" id="numMulti" value="30" min="1" max="200"></div>
-                <div class="control-group"><label>判断(道):</label><input type="number" id="numJudge" value="20" min="1" max="200"></div>
+                <div class="control-group"><label>单选</label><input type="number" id="numSingle" value="50" min="1" max="300"></div>
+                <div class="control-group"><label>多选</label><input type="number" id="numMulti" value="30" min="1" max="200"></div>
+                <div class="control-group"><label>判断</label><input type="number" id="numJudge" value="20" min="1" max="200"></div>
                 <button class="btn btn-warning" onclick="startExamFromLibraries()">🎯 开始组卷</button>
                 <button class="btn btn-success" onclick="submitExam()" id="submitBtn" disabled>📝 提交评分</button>
                 <button class="btn btn-danger" onclick="exportWrongQuestions()" id="exportBtn" style="display:none;">📥 导出错题</button>
@@ -308,11 +514,9 @@
             t.needJ = Math.floor(totalJ * r);
             remainS -= t.needS; remainM -= t.needM; remainJ -= t.needJ;
         });
-        // 余数补全（按顺序分配，保证总数正确）
         for (let i=0; i<remainS; i++) tasks[i%tasks.length].needS++;
         for (let i=0; i<remainM; i++) tasks[i%tasks.length].needM++;
         for (let i=0; i<remainJ; i++) tasks[i%tasks.length].needJ++;
-        // 二次校验
         for (let t of tasks) {
             if (t.needS > t.lib.stats.single || t.needM > t.lib.stats.multi || t.needJ > t.lib.stats.judge) {
                 alert(`抽取后超出题库上限，请减少总题量`);
@@ -334,7 +538,6 @@
             multiList.push(...multiQ);
             judgeList.push(...judgeQ);
         }
-        // 按题型顺序拼接，不额外打乱
         let exam = [...singleList, ...multiList, ...judgeList];
         return exam;
     }
@@ -361,7 +564,6 @@
     function renderExam(data) {
         let html = '';
         data.forEach((item, idx) => {
-            // 不显示题库来源
             html += `<div class="question-block" id="q-${idx}">`;
             html += `<div class="question-title">${idx+1}. ${item.q}</div><div class="options">`;
             if (item.type === 'judge') {
@@ -376,7 +578,6 @@
             }
             html += `</div></div>`;
         });
-        // 在底部添加提交按钮
         html += `<div class="bottom-submit"><button class="btn btn-success" onclick="submitExam()" style="font-size:16px;">✅ 提交评分并定位错题</button></div>`;
         document.getElementById('examArea').innerHTML = html;
     }
@@ -389,7 +590,7 @@
         let minutes = Math.floor(elapsed/60000), seconds = Math.floor((elapsed%60000)/1000);
         let score = 0;
         wrongQuestions = [];
-        let firstWrongIndex = -1;   // 记录第一个错题索引
+        let firstWrongIndex = -1;
 
         currentExam.forEach((item, idx) => {
             let isCorrect = false, userAns = '';
@@ -417,10 +618,12 @@
                 });
             }
             let div = document.getElementById(`q-${idx}`);
-            let fb = document.createElement('div');
-            fb.className = `result-feedback ${isCorrect?'correct':'incorrect'}`;
-            fb.innerHTML = `${isCorrect?'✅ 正确':'❌ 错误'} 正确答案: ${item.answer}<div class="explanation">📖 ${item.explanation}</div>`;
-            div.appendChild(fb);
+            if (div) {
+                let fb = document.createElement('div');
+                fb.className = `result-feedback ${isCorrect?'correct':'incorrect'}`;
+                fb.innerHTML = `${isCorrect?'✅ 正确':'❌ 错误'} 正确答案: ${item.answer}<div class="explanation">📖 ${item.explanation}</div>`;
+                div.appendChild(fb);
+            }
         });
         let resultDiv = document.getElementById('scoreResult');
         resultDiv.style.display = 'block';
@@ -428,12 +631,10 @@
         document.getElementById('exportBtn').style.display = wrongQuestions.length ? 'inline-block' : 'none';
         document.getElementById('retryBtn').style.display = wrongQuestions.length ? 'inline-block' : 'none';
 
-        // 自动定位到第一个错题
         if (firstWrongIndex !== -1) {
             let firstWrongElement = document.getElementById(`q-${firstWrongIndex}`);
             if (firstWrongElement) {
                 firstWrongElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                // 高亮一下
                 firstWrongElement.style.transition = 'background 0.3s';
                 firstWrongElement.style.backgroundColor = '#fff3e0';
                 setTimeout(() => { firstWrongElement.style.backgroundColor = ''; }, 1500);
@@ -498,18 +699,6 @@
 
     document.getElementById('addLibraryBtn').onclick = () => { let inp = document.createElement('input'); inp.type='file'; inp.accept='.xls,.xlsx'; inp.multiple=true; inp.onchange = (e)=>{ Array.from(e.target.files).forEach(f=>addLibraryFromFile(f)); }; inp.click(); };
     document.getElementById('clearAllLibraries').onclick = () => { if(confirm('清空所有题库？')) clearAll(); };
-    document.getElementById('downloadHtmlBtn').onclick = () => {
-        let htmlContent = document.documentElement.outerHTML;
-        let blob = new Blob([htmlContent], {type: 'text/html'});
-        let a = document.createElement('a');
-        let url = URL.createObjectURL(blob);
-        a.href = url;
-        a.download = '多题库考试系统.html';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    };
     window.startExamFromLibraries = startExamFromLibraries;
     window.submitExam = submitExam;
     window.exportWrongQuestions = exportWrongQuestions;
