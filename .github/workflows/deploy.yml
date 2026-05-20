@@ -1,0 +1,48 @@
+name: Deploy Branch to Pages
+on:
+  push:
+    branches: ['**'] # 所有分支推送都触发
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建静态页（按需改）
+        run: |
+          # 纯静态HTML直接复制；Vue/React则执行打包
+          mkdir -p build
+          cp -r ./* build/
+          rm -rf build/.git build/.github
+
+      - name: 部署到gh-pages子目录
+        uses: coderefinery/gh-pages-multibranch@v2
+        with:
+          source_dir: build
+          target_branch: gh-pages
+```{insert\_element\_2\_}
+
+#### 3）开启 GitHub Pages
+1. 仓库 → Settings → Pages
+2. Source 选 **Deploy from a branch**
+3. Branch 选 **gh-pages**，文件夹选 `/`
+4. 保存，等待生效（约1分钟）{insert\_element\_3\_}
+
+### 三、访问规则
+- main 分支：`https://<你>.github.io/<仓库名>/`
+- dev 分支：`https://<你>.github.io/<仓库名>/branch/dev/`
+- feature/abc 分支：`https://<你>.github.io/<仓库名>/branch/feature-abc/`{insert\_element\_4\_}
+
+### 四、关键说明
+- ✅ 每个分支 **独立更新、独立访问**，互不干扰
+- ✅ 自动处理分支名特殊字符（`/` 变 `-`）
+- ✅ 免费、无需服务器、自动HTTPS
+- ❌ 不能绑定多个独立域名（只能子目录）{insert\_element\_5\_}
+
+### 五、纯静态HTML示例
+如果你的页面就是一堆 HTML/CSS/JS，无需构建，把上面 `构建静态页` 步骤改成：
+```bash
+run: |
+  mkdir -p build
+  cp -r index.html css js images build/
