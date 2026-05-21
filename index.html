@@ -63,10 +63,11 @@
             border-radius: 16px;
             padding: 14px;
             border: 1px solid var(--border-light);
+            position: relative;
         }
         .exam-panel {
             flex: 2.8;
-            min-width: 0; /* 防止溢出 */
+            min-width: 0;
             width: 100%;
         }
         .panel-title {
@@ -272,42 +273,34 @@
             font-size: 1rem;
             padding: 10px 24px;
         }
-
-        /* 手机响应式优化 */
+        .toast-msg {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2c3e50;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 40px;
+            font-size: 0.85rem;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            white-space: nowrap;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
         @media (max-width: 700px) {
-            body {
-                padding: 8px;
-            }
-            .container {
-                padding: 12px;
-            }
-            .dashboard {
-                flex-direction: column;
-            }
-            .library-panel, .exam-panel {
-                width: 100%;
-                min-width: auto;
-            }
-            .control-panel {
-                justify-content: center;
-            }
-            .control-group input {
-                width: 55px;
-            }
-            .btn {
-                padding: 6px 12px;
-                font-size: 0.75rem;
-            }
-            #timer {
-                font-size: 0.8rem;
-                padding: 3px 8px;
-            }
-            .question-block {
-                padding: 12px;
-            }
-            .options label {
-                padding: 6px 10px;
-            }
+            body { padding: 8px; }
+            .container { padding: 12px; }
+            .dashboard { flex-direction: column; }
+            .library-panel, .exam-panel { width: 100%; min-width: auto; }
+            .control-panel { justify-content: center; }
+            .control-group input { width: 55px; }
+            .btn { padding: 6px 12px; font-size: 0.75rem; }
+            #timer { font-size: 0.8rem; padding: 3px 8px; }
+            .question-block { padding: 12px; }
+            .options label { padding: 6px 10px; }
+            .toast-msg { white-space: normal; max-width: 80%; text-align: center; line-height: 1.4; }
         }
     </style>
 </head>
@@ -354,6 +347,19 @@
     let wrongQuestions = [];
     let timerInterval = null;
     let startTime = null;
+
+    // 显示短暂提示（toast）
+    function showMessage(msg, isError = false) {
+        let toast = document.createElement('div');
+        toast.className = 'toast-msg';
+        toast.textContent = msg;
+        toast.style.backgroundColor = isError ? '#e74c3c' : '#2c3e50';
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 2000);
+    }
 
     // 解析Excel
     function parseWorkbookToQuestions(workbook) {
@@ -419,7 +425,7 @@
             const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
             const questions = parseWorkbookToQuestions(wb);
             if (questions.single.length+questions.multi.length+questions.judge.length === 0) {
-                alert(`文件 ${file.name} 未检测到有效题目`);
+                showMessage(`文件 ${file.name} 未检测到有效题目`, true);
                 return;
             }
             loadedLibraries.push({
@@ -431,7 +437,7 @@
             });
             autoDistributeRatio();
             renderLibraries();
-            alert(`✅ 添加 ${file.name} | 单选:${questions.single.length} 多选:${questions.multi.length} 判断:${questions.judge.length}`);
+            showMessage(`✅ 添加 ${file.name} | 单选:${questions.single.length} 多选:${questions.multi.length} 判断:${questions.judge.length}`);
         };
         reader.readAsArrayBuffer(file);
     }
@@ -491,17 +497,23 @@
         document.getElementById('examArea').style.display = 'none';
         document.getElementById('submitBtn').disabled = true;
         stopTimer();
+        showMessage('已删除题库', false);
     };
-    function clearAll() { loadedLibraries = []; renderLibraries(); document.getElementById('examArea').style.display = 'none'; stopTimer(); }
+    function clearAll() { 
+        loadedLibraries = []; 
+        renderLibraries(); 
+        document.getElementById('examArea').style.display = 'none'; 
+        stopTimer();
+        showMessage('已清空所有题库', false);
+    }
 
-    // 组卷：按顺序 单选 -> 多选 -> 判断，且不显示题库来源
     function composeExamByRatios(totalS, totalM, totalJ) {
         let totalRatio = loadedLibraries.reduce((s,l)=>s+(l.ratioPercent||0),0);
-        if (totalRatio !== 100) { alert(`比例总和需100%，当前${totalRatio}%`); return null; }
+        if (totalRatio !== 100) { showMessage(`比例总和需100%，当前${totalRatio}%`, true); return null; }
         for (let lib of loadedLibraries) {
             let r = lib.ratioPercent/100;
             if (Math.floor(totalS*r) > lib.stats.single || Math.floor(totalM*r) > lib.stats.multi || Math.floor(totalJ*r) > lib.stats.judge) {
-                alert(`题库“${lib.name}”题目不足，请降低总题量或调整比例`);
+                showMessage(`题库“${lib.name}”题目不足，请降低总题量或调整比例`, true);
                 return null;
             }
         }
@@ -519,7 +531,7 @@
         for (let i=0; i<remainJ; i++) tasks[i%tasks.length].needJ++;
         for (let t of tasks) {
             if (t.needS > t.lib.stats.single || t.needM > t.lib.stats.multi || t.needJ > t.lib.stats.judge) {
-                alert(`抽取后超出题库上限，请减少总题量`);
+                showMessage(`抽取后超出题库上限，请减少总题量`, true);
                 return null;
             }
         }
@@ -543,9 +555,9 @@
     }
 
     function startExamFromLibraries() {
-        if (!loadedLibraries.length) { alert('请先添加题库'); return; }
+        if (!loadedLibraries.length) { showMessage('请先添加题库', true); return; }
         let total = loadedLibraries.reduce((s,l)=>s+(l.ratioPercent||0),0);
-        if (total !== 100) { alert(`比例总和必须100%，当前${total}%`); return; }
+        if (total !== 100) { showMessage(`比例总和必须100%，当前${total}%`, true); return; }
         let totalS = parseInt(document.getElementById('numSingle').value);
         let totalM = parseInt(document.getElementById('numMulti').value);
         let totalJ = parseInt(document.getElementById('numJudge').value);
@@ -583,7 +595,7 @@
     }
 
     function submitExam() {
-        if (!currentExam.length) { alert('请先开始组卷'); return; }
+        if (!currentExam.length) { showMessage('请先开始组卷', true); return; }
         document.getElementById('submitBtn').disabled = true;
         stopTimer();
         let elapsed = Date.now() - startTime;
@@ -643,14 +655,15 @@
     }
 
     function exportWrongQuestions() {
-        if (!wrongQuestions.length) { alert('无错题'); return; }
+        if (!wrongQuestions.length) { showMessage('无错题可导出', true); return; }
         let ws = XLSX.utils.json_to_sheet(wrongQuestions);
         let wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "错题本");
         XLSX.writeFile(wb, `错题_${new Date().toLocaleDateString()}.xlsx`);
+        showMessage('错题已导出', false);
     }
     function restartWrongExam() {
-        if (!wrongQuestions.length) { alert('没有错题'); return; }
+        if (!wrongQuestions.length) { showMessage('没有错题', true); return; }
         currentExam = wrongQuestions.map(q => ({
             q: q.题目, options: q.选项?JSON.parse(q.选项):null, answer: q.正确答案,
             explanation: q.解析, type: q.题型==='单选'?'single':q.题型==='多选'?'multi':'judge'
@@ -660,9 +673,10 @@
         document.getElementById('retryBtn').style.display = 'none';
         document.getElementById('submitBtn').disabled = false;
         startTimer(); renderExam(currentExam);
+        showMessage('开始错题重考', false);
     }
     function enterLearningModeMulti() {
-        if (!loadedLibraries.length) { alert('请先添加题库'); return; }
+        if (!loadedLibraries.length) { showMessage('请先添加题库', true); return; }
         let all = [];
         loadedLibraries.forEach(lib => {
             all.push(...lib.data.single.map(q=>({...q, type:'single'})),
@@ -692,6 +706,7 @@
         document.getElementById('retryBtn').style.display = 'none';
         document.getElementById('submitBtn').disabled = true;
         stopTimer();
+        showMessage('学习模式：已展示全部题目及答案', false);
     }
     function startTimer() { if(timerInterval) clearInterval(timerInterval); startTime = Date.now(); timerInterval = setInterval(()=>{ let e=Date.now()-startTime; let m=Math.floor(e/60000); let s=Math.floor((e%60000)/1000); document.getElementById('timer').innerText=`${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`; },1000); }
     function stopTimer() { if(timerInterval) clearInterval(timerInterval); timerInterval=null; }
