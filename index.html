@@ -454,8 +454,8 @@ function parseJudgeSheet(json, store) {
     json.slice(1).forEach(row => {
         if (row[qCol] && row[aCol]) {
             let ans = row[aCol].toString().trim();
-            if (/^(对|√|true|t|yes|y)$/i.test(ans)) ans = '对';
-            if (/^(错|×|false|f|no|n)$/i.test(ans)) ans = '错';
+            if (/^(正确|对|√|true|t|yes|y)$/i.test(ans)) ans = '对';
+            if (/^(错误|错|×|false|f|no|n)$/i.test(ans)) ans = '错';
             store.judge.push({
                 q: row[qCol].toString().trim(),
                 answer: ans,
