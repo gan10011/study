@@ -59,23 +59,3 @@ footer{margin-top:12px;text-align:right;color:var(--muted);font-size:13px}
   .modes button{padding:6px 8px}
   .option{padding:8px;font-size:13px}
 }
-
-/* Force header horizontal and prevent vertical stacking on mobile */
-header h1{
-  writing-mode: horizontal-tb !important;
-  transform: none !important;
-  white-space: nowrap !important;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: inline-block;
-  max-width: 60vw;
-  margin: 0;
-  padding: 0;
-  word-break: normal !important;
-  letter-spacing: normal !important;
-}
-@media (max-width:600px){
-  header{ flex-wrap:nowrap; align-items:center; gap:8px; }
-  header .controls{ margin-left:auto; }
-  header h1{ max-width: 52vw; font-size:16px; }
-}
