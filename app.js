@@ -1,10 +1,11 @@
-// app.js - 修正版：折叠窗口答题卡（前10/后9） + 修复模考错题累加 + 模考不显示即时解析 + 标记明显
+// app.js - 完整版：支持默认加载 ./study.xlsx（若 localStorage 无题库）并保留手动导入
+// 功能：折叠窗口答题卡（前10/后9）、错题本带历史、模拟考试历史/复卷/重做、专项/顺序交互
 // 依赖：SheetJS (xlsx) 已在 index.html 引入
 
 const LS_KEYS = {
   BANK: 'qb_bank_v1',
   PROGRESS_PREFIX: 'qb_progress_',
-  WRONG: 'qb_wrong_v2',
+  WRONG: 'qb_wrong_v3',
   MOCK_HISTORY: 'qb_mock_hist_v1',
   CARD_COLLAPSED: 'qb_card_collapsed_v1',
   WRONG_AUTO_REMOVE: 'qb_wrong_auto_remove_v1'
@@ -31,8 +32,14 @@ function loadWrongAutoRemove(){ const s = localStorage.getItem(LS_KEYS.WRONG_AUT
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 
-const state = { bank: [], view: null, session: null };
+// global state
+const state = {
+  bank: [],
+  view: null, // 'sequential'|'special'|'mock'|'wrong'
+  session: null // current session
+};
 
+// DOM
 const fileInput = document.getElementById('fileInput');
 const clearBankBtn = document.getElementById('clearBank');
 const bankCount = document.getElementById('bankCount');
@@ -58,7 +65,9 @@ const statusMode = document.getElementById('currentMode');
 
 let wrongBtn = null;
 let toggleCardBtn = null;
+let examTimer = null;
 
+// events
 fileInput.addEventListener('change', onFileChange);
 clearBankBtn.addEventListener('click', onClearBank);
 
@@ -71,10 +80,14 @@ nextBtn.addEventListener('click', ()=> navigateTo(state.session ? state.session.
 markBtn.addEventListener('click', toggleMark);
 submitMockBtn.addEventListener('click', submitMock);
 
+// init
 (function init(){
   try {
     state.bank = loadBank();
     renderBankCount();
+
+    // try load default study.xlsx (only when local storage has no bank)
+    tryLoadDefaultBank();
 
     const modesNode = document.querySelector('.modes');
     if(modesNode){
@@ -100,6 +113,40 @@ submitMockBtn.addEventListener('click', submitMock);
   }
 })();
 
+// ----------------- Try load ./study.xlsx (only if local bank empty) -----------------
+async function tryLoadDefaultBank(){
+  try {
+    const existing = loadBank();
+    if (existing && existing.length > 0) {
+      console.log('本地已有题库，默认 study.xlsx 加载跳过');
+      return;
+    }
+    const res = await fetch('./study.xlsx', { cache: 'no-store' });
+    if (!res.ok) {
+      console.log('默认题库 study.xlsx 未找到（HTTP ' + res.status + '）');
+      return;
+    }
+    const ab = await res.arrayBuffer();
+    const wb = XLSX.read(ab, { type: 'array' });
+    const first = wb.SheetNames[0];
+    const ws = wb.Sheets[first];
+    const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    const parsed = parseRows(json);
+    if (parsed && parsed.length) {
+      state.bank = parsed;
+      saveBank(parsed);
+      renderBankCount();
+      console.log('默认题库 study.xlsx 已加载，题目数：', parsed.length);
+      if(!state.view) renderEmptyView();
+    } else {
+      console.log('study.xlsx 解析后无数据');
+    }
+  } catch (err) {
+    console.warn('加载默认题库 study.xlsx 失败：', err);
+  }
+}
+
+// ----------------- File import -----------------
 function onFileChange(e){
   const f = e.target.files[0];
   if(!f) return;
@@ -117,16 +164,18 @@ function onFileChange(e){
       renderBankCount();
       alert('题库已导入，共 ' + parsed.length + ' 题（已保存到本地）。');
       fileInput.value = '';
-      console.log('导入成功，条目：', parsed.length);
+      console.log('导入成功，题库条目：', parsed.length);
     } catch (err) {
       console.error('解析 Excel 错误：', err);
-      alert('导入失败，见控制台错误信息（F12）。');
+      alert('导入失败，控制台有错误信息（F12 打开）。');
     }
   };
   reader.readAsArrayBuffer(f);
 }
 
+// parse rows from sheet_to_json
 function parseRows(rows){
+  // 支持列名：序号, 题型, 题目, 选项, 答案, 解析
   const out = [];
   for(const r of rows){
     const rawType = r['题型'] || r['类型'] || r['Type'] || '';
@@ -171,11 +220,8 @@ function parseRows(rows){
   return out;
 }
 
-function renderBankCount(){
-  const all = state.bank.length;
-  const wrong = loadWrong().length;
-  bankCount.textContent = `${all}（错题 ${wrong}）`;
-}
+// ----------------- Rendering & modes -----------------
+function renderBankCount(){ bankCount.textContent = state.bank.length + '（错题 ' + loadWrong().length + '）'; }
 
 function renderEmptyView(){
   state.view = null;
@@ -189,7 +235,8 @@ function renderEmptyView(){
   modeConfig.innerHTML = '<div class="hint">请选择模式开始练习，先导入题库（Excel）</div>';
   answerCardWrap.innerHTML = '';
   questionHeader.innerHTML = '';
-  questionBody.innerHTML = '';
+  questionBody.innerHTML = '<div class="empty-placeholder">请选择模式开始练习，先导入题库（Excel）或等待默认题库加载。</div>';
+  questionBody.style.minHeight = '0';
   questionFooter.innerHTML = '';
   examTimerDisplay.style.display = 'none';
   submitMockBtn.style.display = 'none';
@@ -208,12 +255,13 @@ function toggleAnswerCard(){
   renderAnswerCard();
 }
 
+// enterMode: only prompt resume if saved progress exists AND not finished
 function enterMode(view){
   if(state.view === view) return;
   const key = modeProgressKey(view);
   const existing = loadProgress(key);
   let resume = false;
-  if(existing){
+  if(existing && !existing.finished){
     resume = confirm('检测到该模式有未完成进度，是否恢复上次进度？（确定恢复，取消从头开始）');
   }
   state.view = view;
@@ -231,6 +279,7 @@ function enterMode(view){
 
 function modeProgressKey(view, extras=''){ return view + (extras ? ('_' + extras) : ''); }
 
+// sequential
 function prepareSequential(existing){
   modeConfig.innerHTML = '<div>顺序练习：按题库顺序练习，答对自动下一题，答错将加入错题本</div>';
   const qlist = state.bank.slice();
@@ -243,6 +292,7 @@ function prepareSequential(existing){
   renderAnswerCard(); renderCurrentQuestion();
 }
 
+// special
 function prepareSpecial(existing){
   modeConfig.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -281,18 +331,22 @@ function startSpecialSession(type, judgeFilter, existing){
   if(list.length === 0){ alert('没有满足条件的题目。'); return; }
   const key = modeProgressKey('special', `${type}_${judgeFilter}`);
   const exist = loadProgress(key);
-  if(exist){ const resume = confirm('检测到该专项筛选有未完成进度，是否恢复上次进度？'); if(resume){ state.session = exist; renderAnswerCard(); renderCurrentQuestion(); return; } else clearProgress(key); }
+  if(exist && !exist.finished){
+    const resume = confirm('检测到该专项筛选有未完成进度，是否恢复上次进度？（确定恢复，取消重新开始）');
+    if(resume){ state.session = exist; renderAnswerCard(); renderCurrentQuestion(); return; } else clearProgress(key);
+  }
 
   state.session = { id: uid(), mode:'special', filter:{type,judgeFilter}, qids: list.map(q=>q.id), index:0, answers:{}, marked:{}, startedAt: Date.now() };
   saveProgress(key, state.session);
   renderAnswerCard(); renderCurrentQuestion();
 }
 
+// wrong book
 function prepareWrong(existing){
   const wrongList = loadWrong();
   const autoRemove = loadWrongAutoRemove();
   modeConfig.innerHTML = `<div>错题本：当前错题 ${wrongList.length} 题</div>
-    <div style="margin-top:6px"><label><input type="checkbox" id="autoRemoveWrong" ${autoRemove ? 'checked' : ''}/> 答对后自动移出错题本（可切换）</label></div>`;
+    <div style="margin-top:6px"><label><input type="checkbox" id="autoRemoveWrong" ${autoRemove ? 'checked' : ''}/> 答对后自动移出错题本</label></div>`;
   const chk = document.getElementById('autoRemoveWrong');
   chk.addEventListener('change', ()=>{ saveWrongAutoRemove(!!chk.checked); });
 
@@ -301,14 +355,17 @@ function prepareWrong(existing){
   const qids = wrongList.map(w => w.id);
   const key = modeProgressKey('wrong');
   const existingProgress = loadProgress(key);
-  if(existingProgress){ const resume = confirm('检测到错题本有未完成进度，是否恢复上次进度？'); if(resume){ state.session = existingProgress; renderAnswerCard(); renderCurrentQuestion(); return; } else clearProgress(key); }
+  if(existingProgress && !existingProgress.finished){
+    const resume = confirm('检测到错题本有未完成进度，是否恢复上次进度？');
+    if(resume){ state.session = existingProgress; renderAnswerCard(); renderCurrentQuestion(); return; } else clearProgress(key);
+  }
 
   state.session = { id: uid(), mode:'wrong', filter:{type:'wrong'}, qids, index:0, answers:{}, marked:{}, startedAt: Date.now() };
   saveProgress(key, state.session);
   renderAnswerCard(); renderCurrentQuestion();
 }
 
-// 只在“做错”时新增错题条目；若是做对，只在已有条目中追加历史（不新增新条目）
+// wrong record: only add new entry when incorrect; always append history if existing
 function addWrongRecord(qid, selected, mode, correct){
   try{
     const q = getQuestionById(qid);
@@ -322,7 +379,7 @@ function addWrongRecord(qid, selected, mode, correct){
         item = { id: qid, q: JSON.parse(JSON.stringify(q)), wrongCount: 1, history: [histEntry] };
         arr.push(item);
       } else {
-        // 做对且无条目，什么也不做（避免新增）
+        // do not create new item when answer correct and no existing entry
       }
     } else {
       item.history = item.history || [];
@@ -343,92 +400,194 @@ function removeWrongEntry(qid){
   }catch(e){ console.error('removeWrongEntry err', e); }
 }
 
-let examTimer = null;
+// ----------------- Mock exam (history, review, redo) -----------------
 function prepareMock(existing){
   const history = loadMockHistory();
   let histHtml = '';
   if(history.length){
-    histHtml = `<div style="margin-top:8px"><strong>历史考试</strong><ul id="mockHistList">` +
-      history.map(h => `<li data-id="${h.id}">[${new Date(h.startedAt).toLocaleString()}] 得分:${h.score}/${h.total} <button class="viewMock" data-id="${h.id}">查看</button> <button class="redoMock" data-id="${h.id}">重做</button></li>`).join('') +
+    histHtml = `<div style="margin-top:8px"><strong>历史考试</strong><ul id="mockHistList" style="padding-left:18px">` +
+      history.map(h => `<li data-id="${h.id}" style="margin-bottom:6px">[${new Date(h.startedAt).toLocaleString()}] 得分:${h.score}/${h.total} <button class="viewMock" data-id="${h.id}">查看</button> <button class="redoMock" data-id="${h.id}">重做</button> <button class="delMock" data-id="${h.id}">删除</button></li>`).join('') +
       `</ul></div>`;
   }
   modeConfig.innerHTML = '<div>模拟考试：70 道判断 + 30 道单选，总时长 60 分钟</div><div style="margin-top:8px"><button id="startMockBtn">开始 模拟考试</button></div>' + histHtml;
   document.getElementById('startMockBtn').addEventListener('click', ()=> startMockSession(existing));
-  setTimeout(()=>{ document.querySelectorAll('.viewMock').forEach(b=> b.addEventListener('click', ()=> reviewMock(b.dataset.id))); document.querySelectorAll('.redoMock').forEach(b=> b.addEventListener('click', ()=> redoMock(b.dataset.id))); },50);
 
-  if(existing && confirm('检测到未完成的模拟考试，是否恢复？（确定恢复，取消重新开始）')){ startMockSession(existing, true); }
-  else { questionHeader.innerHTML = '<div>尚未开始模拟考试，点击“开始 模拟考试”开始。</div>'; questionBody.innerHTML=''; questionFooter.innerHTML=''; answerCardWrap.innerHTML=''; }
+  setTimeout(()=>{ // bind history buttons
+    document.querySelectorAll('.viewMock').forEach(b=> b.addEventListener('click', ()=> reviewMock(b.dataset.id)));
+    document.querySelectorAll('.redoMock').forEach(b=> b.addEventListener('click', ()=> redoMock(b.dataset.id)));
+    document.querySelectorAll('.delMock').forEach(b=> b.addEventListener('click', (e)=> {
+      const id = e.currentTarget.dataset.id;
+      if(!confirm('确认删除该历史考试？')) return;
+      const arr = loadMockHistory().filter(x=>x.id!=id);
+      saveMockHistory(arr);
+      prepareMock(null);
+    }));
+  },50);
+
+  if(existing && !existing.finished && confirm('检测到未完成的模拟考试，是否恢复？（确定恢复，取消重新开始）')){
+    startMockSession(existing, true);
+  }else{
+    questionHeader.innerHTML = '<div>尚未开始模拟考试，点击“开始 模拟考试”开始。</div>';
+    questionBody.innerHTML = '';
+    questionFooter.innerHTML = '';
+    answerCardWrap.innerHTML = '';
+  }
 }
 
 function startMockSession(existing, forceResume=false){
   const key = modeProgressKey('mock');
-  if(existing && forceResume){ state.session = existing; startExamTimer(); renderAnswerCard(); renderCurrentQuestion(); submitMockBtn.style.display = 'block'; examTimerDisplay.style.display='block'; return; }
-  const judges = state.bank.filter(q=>q.type==='判断题');
-  const singles = state.bank.filter(q=>q.type==='单选题');
-  const pick = (arr,n)=>{ const a = arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a.slice(0, Math.min(n,a.length)); };
+  if(existing && forceResume){
+    state.session = existing;
+    startExamTimer();
+    renderAnswerCard();
+    renderCurrentQuestion();
+    submitMockBtn.style.display = 'block';
+    examTimerDisplay.style.display = 'block';
+    return;
+  }
+
+  const judges = state.bank.filter(q=>q.type === '判断题');
+  const singles = state.bank.filter(q=>q.type === '单选题');
+  const pick = (arr, n) => {
+    const a = arr.slice();
+    for(let i=a.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];
+    }
+    return a.slice(0, Math.min(n, a.length));
+  };
   const examList = [].concat(pick(judges,70), pick(singles,30));
-  if(examList.length===0){ alert('题库中没有合适题目，无法开始模拟考试。'); return; }
-  state.session = { id: uid(), mode:'mock', filter:{examSize: examList.length}, qids: examList.map(q=>q.id), index:0, answers:{}, marked:{}, startedAt:Date.now(), durationMin:60, endsAt: Date.now()+60*60*1000 };
+  if(examList.length === 0){
+    alert('题库中没有合适的题目，无法开始模拟考试。');
+    return;
+  }
+  state.session = {
+    id: uid(),
+    mode: 'mock',
+    filter: { examSize: examList.length },
+    qids: examList.map(q=>q.id),
+    index: 0,
+    answers: {},
+    marked: {},
+    startedAt: Date.now(),
+    durationMin: 60,
+    endsAt: Date.now() + 60*60*1000
+  };
   saveProgress(key, state.session);
-  startExamTimer(); renderAnswerCard(); renderCurrentQuestion(); submitMockBtn.style.display='block'; examTimerDisplay.style.display='block';
+  startExamTimer();
+  renderAnswerCard();
+  renderCurrentQuestion();
+  submitMockBtn.style.display = 'block';
+  examTimerDisplay.style.display = 'block';
 }
 
 function startExamTimer(){
   if(examTimer) clearInterval(examTimer);
-  examTimer = setInterval(()=>{ if(!state.session) return; const left = Math.max(0, Math.floor((state.session.endsAt - Date.now())/1000)); const mm=String(Math.floor(left/60)).padStart(2,'0'); const ss=String(left%60).padStart(2,'0'); timerDisplay.textContent=`${mm}:${ss}`; if(left<=0){ clearInterval(examTimer); alert('考试时间到，自动交卷。'); submitMock(); } }, 500);
+  examTimer = setInterval(()=>{
+    if(!state.session) return;
+    const left = Math.max(0, Math.floor((state.session.endsAt - Date.now())/1000));
+    const mm = String(Math.floor(left/60)).padStart(2,'0');
+    const ss = String(left%60).padStart(2,'0');
+    timerDisplay.textContent = `${mm}:${ss}`;
+    if(left <= 0){
+      clearInterval(examTimer);
+      alert('考试时间到，自动交卷。');
+      submitMock();
+    }
+  }, 500);
 }
 
-function addMockHistory(record){ const arr = loadMockHistory(); arr.unshift(record); if(arr.length>50) arr.length=50; saveMockHistory(arr); }
+function addMockHistory(record){
+  const arr = loadMockHistory();
+  arr.unshift(record);
+  if(arr.length > 50) arr.length = 50;
+  saveMockHistory(arr);
+}
 
 function submitMock(){
   if(!state.session || state.session.mode !== 'mock') return;
   if(!confirm('确认交卷并查看结果？')) return;
-  let total=0, correct=0;
+  let total = 0, correct = 0;
   for(const qid of state.session.qids){
-    total++; const q = getQuestionById(qid); const user = state.session.answers[qid]; if(user==null) continue; const ok = checkCorrect(q,user); if(ok) correct++;
+    total++;
+    const q = getQuestionById(qid);
+    const user = state.session.answers[qid];
+    if(user == null) continue;
+    if(checkCorrect(q, user)) correct++;
   }
   clearInterval(examTimer);
   const endedAt = Date.now();
   const rec = { id: state.session.id, qids: state.session.qids.slice(), answers: Object.assign({}, state.session.answers), score: correct, total, startedAt: state.session.startedAt, endedAt };
   addMockHistory(rec);
 
-  // 在交卷时把错题保存到错题本，并为每题写入历史（只为错题新增条目；对的仅补充已有条目）
+  // on submit, write wrong records (and history) for all questions
   for(const qid of state.session.qids){
     const q = getQuestionById(qid);
     const user = state.session.answers[qid];
-    const ok = (user != null) && checkCorrect(q,user);
+    const ok = (user != null) && checkCorrect(q, user);
     addWrongRecord(qid, user, 'mock', ok);
   }
 
   alert(`交卷完成：共 ${total} 题，答对 ${correct} 题，得分 ${correct} 分。进入答题回顾（显示正确答案与解析）。`);
   state.session.finished = true;
   saveProgress(modeProgressKey('mock'), state.session);
-  renderAnswerCard(); renderCurrentQuestion();
+  renderAnswerCard();
+  renderCurrentQuestion();
 }
 
 function reviewMock(historyId){
   const history = loadMockHistory();
-  const rec = history.find(h=>h.id==historyId);
-  if(!rec){ alert('找不到历史记录'); return; }
-  state.session = { id: rec.id + '_review', mode:'mock', qids: rec.qids.slice(), index:0, answers: Object.assign({}, rec.answers), marked:{}, startedAt: rec.startedAt, endedAt: rec.endedAt, finished:true };
+  const rec = history.find(h => h.id == historyId);
+  if(!rec){ alert('找不到对应历史记录'); return; }
+  state.session = {
+    id: rec.id + '_review',
+    mode: 'mock',
+    qids: rec.qids.slice(),
+    index: 0,
+    answers: Object.assign({}, rec.answers),
+    marked: {},
+    startedAt: rec.startedAt,
+    endedAt: rec.endedAt,
+    finished: true
+  };
   state.view = 'mock';
-  modeSeqBtn.classList.remove('active'); modeSpecialBtn.classList.remove('active'); modeMockBtn.classList.add('active'); if(wrongBtn) wrongBtn.classList.remove('active');
+  modeSeqBtn.classList.remove('active');
+  modeSpecialBtn.classList.remove('active');
+  modeMockBtn.classList.add('active');
+  if(wrongBtn) wrongBtn.classList.remove('active');
   statusMode.textContent = '模拟考试（复卷）';
-  renderAnswerCard(); renderCurrentQuestion();
-  submitMockBtn.style.display='none'; examTimerDisplay.style.display='none';
+  renderAnswerCard();
+  renderCurrentQuestion();
+  submitMockBtn.style.display = 'none';
+  examTimerDisplay.style.display = 'none';
 }
 
 function redoMock(historyId){
   const history = loadMockHistory();
-  const rec = history.find(h=>h.id==historyId);
-  if(!rec){ alert('找不到历史记录'); return; }
-  state.session = { id: uid(), mode:'mock', filter:{examSize: rec.qids.length}, qids: rec.qids.slice(), index:0, answers:{}, marked:{}, startedAt:Date.now(), durationMin:60, endsAt: Date.now()+60*60*1000 };
+  const rec = history.find(h => h.id == historyId);
+  if(!rec){ alert('找不到对应历史记录'); return; }
+  state.session = {
+    id: uid(),
+    mode: 'mock',
+    filter: { examSize: rec.qids.length },
+    qids: rec.qids.slice(),
+    index: 0,
+    answers: {},
+    marked: {},
+    startedAt: Date.now(),
+    durationMin: 60,
+    endsAt: Date.now() + 60*60*1000
+  };
   saveProgress(modeProgressKey('mock'), state.session);
-  startExamTimer(); renderAnswerCard(); renderCurrentQuestion(); submitMockBtn.style.display='block'; examTimerDisplay.style.display='block';
+  startExamTimer();
+  renderAnswerCard();
+  renderCurrentQuestion();
+  submitMockBtn.style.display = 'block';
+  examTimerDisplay.style.display = 'block';
 }
 
+// ----------------- Answer card & question rendering -----------------
 function renderAnswerCard(){
-  if(!state.session){ answerCardWrap.innerHTML=''; updateCardToggleLabel(); return; }
+  if(!state.session) { answerCardWrap.innerHTML = ''; updateCardToggleLabel(); return; }
   const total = state.session.qids.length;
   const arr = state.session.qids;
   const collapsed = loadCardCollapsed();
@@ -444,7 +603,7 @@ function renderAnswerCard(){
       return `<div class="${cls}" data-idx="${globalIdx}" title="题 ${globalIdx+1}">${globalIdx+1}</div>`;
     }).join('');
     const info = `显示 ${winStart+1} ~ ${winEnd} / ${total}`;
-    answerCardWrap.innerHTML = `<div style="padding:6px;background:#fff;border-radius:6px;display:flex;flex-direction:column;gap:6px"><div>${info}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${chips}</div></div>`;
+    answerCardWrap.innerHTML = `<div style="padding:6px;background:#fff;border-radius:6px;display:flex;flex-direction:column;gap:6px"><div style="font-size:13px;color:#444">${info}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${chips}</div></div>`;
     answerCardWrap.querySelectorAll('.q-chip').forEach(n => n.addEventListener('click', ()=> navigateTo(Number(n.dataset.idx))));
   } else {
     const chips = arr.map((qid, idx) => {
@@ -460,57 +619,80 @@ function renderAnswerCard(){
 }
 
 function renderCurrentQuestion(){
-  if(!state.session){ questionHeader.innerHTML=''; questionBody.innerHTML=''; questionFooter.innerHTML=''; return; }
+  if(!state.session){
+    questionHeader.innerHTML = '';
+    questionBody.innerHTML = '';
+    questionFooter.innerHTML = '';
+    return;
+  }
+  // ensure questionBody auto height
+  questionBody.style.minHeight = '';
+
   const idx = state.session.index;
   const qid = state.session.qids[idx];
   const q = getQuestionById(qid);
-  if(!q){ questionHeader.innerHTML = '<div>找不到题目</div>'; return; }
+  if(!q){
+    questionHeader.innerHTML = '<div>找不到题目</div>';
+    questionBody.innerHTML = '';
+    return;
+  }
 
   questionHeader.innerHTML = `第 ${idx+1} / ${state.session.qids.length} 题 <span style="margin-left:8px;color:#666">(${q.type})</span>`;
+
   const para = `<div style="margin-bottom:8px">${q.question}</div>`;
   let optsHtml = '';
   if(q.type === '判断题'){
-    optsHtml = `<div class="options"><div class="option" data-val="正确">正确</div><div class="option" data-val="错误">错误</div></div>`;
-  } else {
-    const opts = (q.options || []).map(o => { const key = o.key || ''; const text = o.text || o; return `<div class="option" data-val="${key}"><strong>${key}.</strong> ${text}</div>`; }).join('');
+    optsHtml = `
+      <div class="options">
+        <div class="option" data-val="正确">正确</div>
+        <div class="option" data-val="错误">错误</div>
+      </div>
+    `;
+  }else{
+    const opts = (q.options || []).map(o => {
+      const key = o.key || '';
+      const text = o.text || o;
+      return `<div class="option" data-val="${key}"><strong>${key}.</strong> ${text}</div>`;
+    }).join('');
     optsHtml = `<div class="options">${opts}</div>`;
   }
+
   questionBody.innerHTML = para + optsHtml;
 
   const isMock = state.session.mode === 'mock';
   const finished = !!state.session.finished;
-  if(isMock) questionFooter.innerHTML = `<div><small>模拟考试/复卷模式：答题中不显示解析；交卷后或复卷显示解析。</small></div>`;
-  else questionFooter.innerHTML = `<div><small>选择后将显示是否正确与解析（顺序模式答对自动下一题）。</small></div>`;
+  if(isMock){
+    questionFooter.innerHTML = `<div><small>模拟考试/复卷：答题中不显示解析；交卷后或复卷显示解析。</small></div>`;
+  }else{
+    questionFooter.innerHTML = `<div><small>选择后显示是否正确与解析（顺序/专项答对自动下一题）。</small></div>`;
+  }
 
-  questionBody.querySelectorAll('.option').forEach(n => n.addEventListener('click', ()=> handleAnswer(q, n.dataset.val)));
+  questionBody.querySelectorAll('.option').forEach(n=>{
+    n.addEventListener('click', ()=> handleAnswer(q, n.getAttribute('data-val')));
+  });
 
-  // 仅在 非模拟考试进行中 或 复卷/已交卷 时 显示错题历史（避免模考中干扰）
+  // only show wrong history when not in active mock or when finished
   const wrongItem = loadWrong().find(x => x.id == qid);
   if(wrongItem && (state.session.mode !== 'mock' || finished)){
     const hist = (wrongItem.history || []).slice(-10).reverse();
-    const histHtml = `<div style="margin-top:8px;padding:8px;border-top:1px dashed #eee"><strong>错题统计：</strong>已错 ${wrongItem.wrongCount || 0} 次<br/><strong>最近记录（最多10条）：</strong><ul>${hist.map(h => `<li>[${new Date(h.time).toLocaleString()}] 模式:${h.mode || '-'} 答:${h.selected || '-'} ${h.correct ? '<span style="color:green">正确</span>' : '<span style="color:red">错误</span>'}</li>`).join('')}</ul></div>`;
+    const histHtml = `<div style="margin-top:8px;padding:8px;border-top:1px dashed #eee"><strong>错题统计：</strong>已错 ${wrongItem.wrongCount || 0} 次<br/><strong>最近记录（最多10条）：</strong><ul style="padding-left:18px">${hist.map(h => `<li>[${new Date(h.time).toLocaleString()}] 模式:${h.mode || '-'} 答:${h.selected || '-'} ${h.correct ? '<span style="color:green">正确</span>' : '<span style="color:red">错误</span>'}</li>`).join('')}</ul></div>`;
     questionFooter.innerHTML += histHtml;
   }
 
   const prev = state.session.answers[qid];
   if(prev != null){
-    questionBody.querySelectorAll('.option').forEach(n => { if(n.getAttribute('data-val') == prev) n.classList.add('selected'); else n.classList.remove('selected'); });
+    questionBody.querySelectorAll('.option').forEach(n => {
+      if(n.getAttribute('data-val') == prev) n.classList.add('selected'); else n.classList.remove('selected');
+    });
     if(state.session.mode !== 'mock' || finished) showAnswerFeedback(q, prev);
   }
+
   const isMarked = !!state.session.marked[qid];
   markBtn.textContent = isMarked ? '取消标记' : '标记';
   renderAnswerCard();
 }
 
-function getQuestionById(id){
-  let q = state.bank.find(x=>x.id == id);
-  if(!q){
-    const wrong = loadWrong().find(x=>x.id==id);
-    if(wrong) q = wrong.q;
-  }
-  return q;
-}
-
+// ----------------- Answer handling -----------------
 function handleAnswer(q, val){
   if(!state.session) return;
   const qid = q.id;
@@ -520,30 +702,51 @@ function handleAnswer(q, val){
 
   const isCorrect = checkCorrect(q, val);
 
-  // 注意：在模拟考试进行中不在每题时立即写入错题库（避免错题累加与显示）
+  // during active mock, do not write per-question wrong entries (avoid miscounts); only save at submit
   if(state.session.mode !== 'mock'){
     addWrongRecord(qid, val, state.session.mode || '', isCorrect);
   }
 
+  // if in wrong mode and auto remove is on and answered correct -> remove
   if(state.session.mode === 'wrong' && isCorrect && loadWrongAutoRemove()){
     removeWrongEntry(qid);
-    const i = state.session.qids.indexOf(qid);
-    if(i>=0){ state.session.qids.splice(i,1); if(state.session.index >= state.session.qids.length) state.session.index = Math.max(0, state.session.qids.length-1); saveProgress(modeProgressKey('wrong'), state.session); }
+    const idx = state.session.qids.indexOf(qid);
+    if(idx >= 0){
+      state.session.qids.splice(idx, 1);
+      if(state.session.index >= state.session.qids.length) state.session.index = Math.max(0, state.session.qids.length-1);
+      saveProgress(modeProgressKey('wrong'), state.session);
+    }
   }
 
+  // Mode specific interactions
   if(state.session.mode === 'sequential'){
-    if(isCorrect){ renderAnswerFeedbackInline(q, true); setTimeout(()=> navigateTo(state.session.index+1), 600); return; }
-    else { renderAnswerFeedbackInline(q, false); return; }
-  } else if(state.session.mode === 'special' || state.session.mode === 'wrong'){
-    renderAnswerFeedbackInline(q, isCorrect); return;
+    if(isCorrect){
+      renderAnswerFeedbackInline(q, true);
+      setTimeout(()=> navigateTo(state.session.index + 1), 600);
+      return;
+    } else {
+      renderAnswerFeedbackInline(q, false);
+      return;
+    }
+  } else if(state.session.mode === 'special'){
+    // special: answer correct => auto next; answer wrong => show解析 and stay
+    if(isCorrect){
+      renderAnswerFeedbackInline(q, true);
+      setTimeout(()=> navigateTo(state.session.index + 1), 600);
+      return;
+    } else {
+      renderAnswerFeedbackInline(q, false);
+      return;
+    }
+  } else if(state.session.mode === 'wrong'){
+    renderAnswerFeedbackInline(q, isCorrect);
+    return;
   } else if(state.session.mode === 'mock'){
-    // 在模考中：如果不是最后一题自动跳转下一题；最后一题停留，等待交卷（不显示即时解析）
+    // mock: don't show解析 per question; auto advance unless last question
     if(state.session.index < state.session.qids.length - 1){
       navigateTo(state.session.index + 1);
     } else {
-      // 最后一题，保持当前，不自动交卷或显示解析
-      // 你可以提示用户交卷
-      // alert('已到最后一题，记得交卷或等待时间结束。');
+      // last ques: stay; user should submit
     }
     return;
   }
@@ -559,9 +762,9 @@ function checkCorrect(q, val){
   } else {
     const ra = (q.answer||'').toString().trim();
     if(val === ra) return true;
-    const optByKey = (q.options||[]).find(o => (o.key||'')==ra);
+    const optByKey = (q.options||[]).find(o => (o.key||'') == ra);
     if(optByKey && (val == optByKey.key || val == optByKey.text)) return true;
-    const optByText = (q.options||[]).find(o => (o.text||'')==ra);
+    const optByText = (q.options||[]).find(o => (o.text||'') == ra);
     if(optByText && (val == optByText.key || val == optByText.text)) return true;
     return false;
   }
@@ -573,14 +776,26 @@ function renderAnswerFeedbackInline(q, isCorrect){
   nodes.forEach(n=>{
     n.classList.remove('correct','wrong');
     const v = n.getAttribute('data-val');
-    if(v == user){ if(isCorrect) n.classList.add('correct'); else n.classList.add('wrong'); }
+    if(v == user){
+      if(isCorrect) n.classList.add('correct'); else n.classList.add('wrong');
+    }
+    // highlight correct option
     if(q.type === '单选题'){
       const ra = q.answer;
-      if(ra) nodes.forEach(m=>{ if(m.getAttribute('data-val') == ra) m.classList.add('correct'); });
+      if(ra){
+        nodes.forEach(m=>{
+          if(m.getAttribute('data-val') == ra) m.classList.add('correct');
+        });
+      }
     } else {
-      if(q.answer) nodes.forEach(m=>{ if(m.getAttribute('data-val') == q.answer) m.classList.add('correct'); });
+      if(q.answer){
+        nodes.forEach(m=>{
+          if(m.getAttribute('data-val') == q.answer) m.classList.add('correct');
+        });
+      }
     }
   });
+
   const anal = q.analysis ? `<div style="margin-top:10px;padding:8px;border-top:1px dashed #eee"><strong>解析：</strong><div>${q.analysis}</div></div>` : '';
   questionFooter.innerHTML = `<div>${isCorrect ? '<span style="color:green">回答正确</span>' : '<span style="color:red">回答错误</span>'}</div>${anal}<div style="margin-top:8px"><button id="goNextBtn">下一题</button></div>`;
   const goNextBtn = document.getElementById('goNextBtn');
@@ -593,13 +808,18 @@ function showAnswerFeedback(q, userVal){
   const isCorrect = checkCorrect(q, userVal);
   nodes.forEach(n=>{
     const v = n.getAttribute('data-val');
-    if(v == userVal){ if(isCorrect) n.classList.add('correct'); else n.classList.add('wrong'); }
-    if(q.answer && (v == q.answer || (q.options||[]).find(o=>o.key==q.answer && o.key==v))) n.classList.add('correct');
+    if(v == userVal){
+      if(isCorrect) n.classList.add('correct'); else n.classList.add('wrong');
+    }
+    if(q.answer && (v == q.answer || (q.options||[]).find(o=>o.key==q.answer && o.key==v))){
+      n.classList.add('correct');
+    }
   });
   const anal = q.analysis ? `<div style="margin-top:10px;padding:8px;border-top:1px dashed #eee"><strong>解析：</strong><div>${q.analysis}</div></div>` : '';
   questionFooter.innerHTML = `<div>${isCorrect ? '<span style="color:green">回答正确</span>' : '<span style="color:red">回答错误</span>'}</div>${anal}`;
 }
 
+// ----------------- Nav & helper -----------------
 function navigateTo(idx){
   if(!state.session) return;
   if(idx < 0) idx = 0;
@@ -607,7 +827,8 @@ function navigateTo(idx){
   state.session.index = idx;
   const key = state.session.mode === 'special' ? modeProgressKey('special', `${state.session.filter.type}_${state.session.filter.judgeFilter}`) : modeProgressKey(state.session.mode);
   saveProgress(key, state.session);
-  renderAnswerCard(); renderCurrentQuestion();
+  renderAnswerCard();
+  renderCurrentQuestion();
 }
 
 function toggleMark(){
@@ -620,6 +841,16 @@ function toggleMark(){
   renderCurrentQuestion();
 }
 
+function getQuestionById(id){
+  let q = state.bank.find(x=>x.id == id);
+  if(!q){
+    const wrong = loadWrong().find(x=>x.id==id);
+    if(wrong) q = wrong.q;
+  }
+  return q;
+}
+
+// ----------------- Misc -----------------
 function onClearBank(){
   if(!confirm('确认清空本地题库？此操作会删除保存在浏览器中的题库。')) return;
   localStorage.removeItem(LS_KEYS.BANK);
