@@ -11,11 +11,15 @@
 <body>
   <div class="container">
     <header>
-      <div class="app-icon" title="练题系统">📘</div>
-      <h1>练题 & 模拟考试系统</h1>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="app-icon">📚</div>
+        <h1>练题 & 模拟考试系统</h1>
+      </div>
       <div class="controls">
         <input id="fileInput" type="file" accept=".xlsx,.xls" />
         <button id="clearBank">清空题库</button>
+        <input id="searchInput" type="search" placeholder="搜索题库（题目/选项/解析）" style="padding:6px;margin-left:8px;max-width:220px" />
+        <button id="clearSearch" style="display:inline-block;padding:6px">清空</button>
       </div>
     </header>
 
